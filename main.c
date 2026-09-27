@@ -3,11 +3,8 @@
 #include "memalloc.h"
 
 
-
-
-
-
 int main(void) {
-    printf("Hello, World!\n");
-    return 0;
+    init_heap();
+    char *buf = my_malloc(sizeof(char) * 50);
+    my_free(buf);
 }

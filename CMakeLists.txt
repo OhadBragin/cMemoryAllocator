@@ -5,4 +5,5 @@ set(CMAKE_C_STANDARD 11)
 
 add_executable(cMemoryAllocator main.c
         memalloc.c
-        memalloc.h)
+        memalloc.h
+        utils.c)
