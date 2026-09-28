@@ -10,7 +10,6 @@ typedef enum {
 }ErrorCode;
 
 const char *ErrorCode_to_text(ErrorCode err);
-void init_heap();
 void debug_print_heap();
 void* my_malloc(size_t nbytes);
 void my_free(void* ptr);

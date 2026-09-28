@@ -18,7 +18,7 @@ typedef struct block_header{
    size_t magic; //magic to detect valid header. also serves as align to 16/32bytes
 }block_header;
 
-_Alignas(size_t) uint8_t heap[HEAP_SIZE];
+_Alignas(size_t) uint8_t heap[HEAP_SIZE]; //1MB
 static size_t heap_space = sizeof(heap);
 static uint8_t* pHeapHead = &heap[0];
 static block_header* pLastBlock = NULL;
