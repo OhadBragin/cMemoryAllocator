@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <errno.h>
+
 
 #define ALIGNMENT (2 * sizeof(size_t))
 #define ALIGN(size) (((size) + (ALIGNMENT - 1)) & ~(size_t)(ALIGNMENT - 1))
@@ -34,56 +36,48 @@ static void init_header(void *addr) {
    heap_space -= sizeof(block_header);
 }
 
-void init_heap() {
-   init_header(&heap);
-}
-
-
-
-static block_header* get_free_block() {
+static block_header* get_free_block(size_t nbytes) {
    //first search for a free block
    block_header *pCurrentBlock = (block_header*)pHeapHead;
-   //check first(in case theres only one head)
-   if (pCurrentBlock->is_free) {
-      return pCurrentBlock;
-   }
-   while (pCurrentBlock->next != NULL) {
+
+   while (pCurrentBlock != NULL) {
       if (pCurrentBlock->is_free == 1) {
-         return pCurrentBlock;
+         if (pCurrentBlock->size >= nbytes)
+            return pCurrentBlock;
       }
       pCurrentBlock = pCurrentBlock->next;
    }
    //no blocks were found, create new one
+   if (pLastBlock == NULL) { //first block
+      init_header(&heap);
+      return pLastBlock;
+   }
    //first, check if theres space
-   if (heap_space - sizeof(block_header) > 0) {
-      uint8_t *offset = (uint8_t*)pCurrentBlock;
-      offset += sizeof(block_header) + pCurrentBlock->size + 1;//get next header address
+   size_t space_needed = ALIGN(sizeof(block_header) + nbytes);
+   if (heap_space >= space_needed) {
+      uint8_t *offset = (uint8_t*)pLastBlock;
+      offset += sizeof(block_header) + pLastBlock->size;//get next header address
       init_header(offset);
-      return pCurrentBlock->next;
+      return pLastBlock;
    }
    //no blocks found, no space for new block
    return NULL;
 }
 
-void* my_malloc(size_t nbytes) {
+void *my_malloc(size_t nbytes) {
    //get a free block, change it's is_free status,
    //assign data after the block.
    if (nbytes <= 0) {
-      perror("\nmy_malloc(): nbytes must be more than 0!");
+      errno = EINVAL;
       return NULL;
    }
    //align bytes
    nbytes = ALIGN(nbytes);
-   //check if theres space
-   if (heap_space - nbytes < 0) {
-      perror("\nmy_malloc():\n");
-      perror(ErrorCode_to_text(ERR_OUT_OF_MEMEORY));
-   }
    //get free block
-   block_header *header = get_free_block();
+   block_header *header = get_free_block(nbytes);
    if (header == NULL) {
-      perror(ErrorCode_to_text(ERR_OUT_OF_MEMEORY));
-      exit(ERR_OUT_OF_MEMEORY);
+      errno = ENOMEM;
+      return NULL;
    }
    header->size = nbytes;
    header->is_free = 0;
@@ -91,6 +85,28 @@ void* my_malloc(size_t nbytes) {
    header++;
    return header; //starting point of user access
 }
+
+void *my_calloc(size_t count, size_t size) {
+   //check valid params
+   if (count <= 0 || size <= 0) {
+      errno = EINVAL;
+      return NULL;
+   }
+   size_t space_needed = ALIGN(count * size);
+   void *ptr = my_malloc(space_needed);
+   //my_alloc returned null
+   if (ptr == NULL) {
+      return NULL;
+   }
+   //iterate with a for loop, setting each byte to zero.
+   size_t *pSize = ptr;
+   size_t num_words = space_needed / sizeof(size_t);
+   for (int i = 0; i < space_needed; i++) {
+      pSize[i] = 0;
+   }
+   return ptr;
+}
+
 
 void my_free(void* ptr) {
    //goal: set is_free to 0

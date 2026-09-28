@@ -14,7 +14,7 @@ void init_heap();
 void debug_print_heap();
 void* my_malloc(size_t nbytes);
 void my_free(void* ptr);
-void* my_calloc(size_t num, size_t nsize);
+void *my_calloc(size_t count, size_t size);
 void* my_realloc(void* ptr, size_t size);
 
 void print_mem_blocks(void);
