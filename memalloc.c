@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <errno.h>
+#include <string.h>
 
 
 #define ALIGNMENT (2 * sizeof(size_t))
@@ -18,11 +19,12 @@ typedef struct block_header{
    size_t magic; //magic to detect valid header. also serves as align to 16/32bytes
 }block_header;
 
-_Alignas(size_t) uint8_t heap[HEAP_SIZE]; //1MB
-static size_t heap_space = sizeof(heap);
-static uint8_t* pHeapHead = &heap[0];
-static block_header* pLastBlock = NULL;
 
+static _Alignas(size_t) uint8_t heap[HEAP_SIZE]; //1MB
+static size_t heap_space = sizeof(heap);
+static block_header *pLastBlock = NULL;
+static block_header *pFirstBlock = NULL;
+static void *heap_end = (void *)(heap + HEAP_SIZE);
 static void init_header(void *addr) {
     if (pLastBlock != NULL) { //not the first block
        pLastBlock->next = addr;
@@ -38,7 +40,7 @@ static void init_header(void *addr) {
 
 static block_header* get_free_block(size_t nbytes) {
    //first search for a free block
-   block_header *pCurrentBlock = (block_header*)pHeapHead;
+   block_header *pCurrentBlock = pFirstBlock;
 
    while (pCurrentBlock != NULL) {
       if (pCurrentBlock->is_free == 1) {
@@ -50,6 +52,7 @@ static block_header* get_free_block(size_t nbytes) {
    //no blocks were found, create new one
    if (pLastBlock == NULL) { //first block
       init_header(&heap);
+      pFirstBlock = (block_header*)heap;
       return pLastBlock;
    }
    //first, check if theres space
@@ -57,6 +60,9 @@ static block_header* get_free_block(size_t nbytes) {
    if (heap_space >= space_needed) {
       uint8_t *offset = (uint8_t*)pLastBlock;
       offset += sizeof(block_header) + pLastBlock->size;//get next header address
+      if ((uintptr_t)offset >= (uintptr_t)heap_end) {
+         return NULL;
+      }
       init_header(offset);
       return pLastBlock;
    }
@@ -100,40 +106,84 @@ void *my_calloc(size_t count, size_t size) {
    }
    //iterate with a for loop, setting each byte to zero.
    size_t *pSize = ptr;
-   size_t num_words = space_needed / sizeof(size_t);
-   for (int i = 0; i < space_needed; i++) {
+   size_t const num_words = space_needed / sizeof(size_t);
+   for (int i = 0; i < num_words; i++) {
       pSize[i] = 0;
    }
    return ptr;
 }
 
 
+
+void *is_valid_pointer(void *ptr) {
+   //checks if the pointer was returned by a valid memory function
+   //if not, returns NULL
+   //if it is, returns a pointer to the start of the blocker header
+   if (ptr == NULL) {
+      return NULL;
+   }
+   //we need to get back to is_free(start of the header), which is supposed
+   //to be 3 * size_t before the ptr
+   size_t *pHeader = ptr;
+   pHeader--; //first, we check if it is a valid block by checking the magic value
+   if (*pHeader != 0xDEADBEEF) { //not a valid block
+      return NULL;
+   }
+   pHeader -= 3; //size field, the head
+   return pHeader;
+
+}
+
 void my_free(void* ptr) {
    //goal: set is_free to 0
    if (ptr == NULL) {
-      perror("my_free(): Pointer is empty!\n");
-   }
-   //we need to get back to is_free, which is supposed
-   //to be 3 * size_t before the addr
-   size_t *pIsFree = (size_t*)ptr;
-   pIsFree--; //first, we check if it is a valid block by checking the magic value
-   if (*pIsFree != 0xDEADBEEF) {
-      perror("\nmy_free():\n");
-      perror(ErrorCode_to_text(ERR_INVALID_ADDRESS));
       return;
    }
-   pIsFree -= 2; //is_free
+   size_t *pIsFree = is_valid_pointer(ptr);
+   if (pIsFree == NULL) {
+      return;
+   }
+   heap_space +=  *pIsFree; //increase heap space
+   pIsFree++; //is_free
    *pIsFree = 1; //set to true
-   pIsFree--; //get to size to increase heap space
-   heap_space +=  *pIsFree;
 }
 
-void debug_print_heap() {
-   printf("%lu, %lu", sizeof(heap), heap_space);
-   size_t n = sizeof(heap) - heap_space;
-   for (int i = 0; i < n; i++) {
-      printf("%02x\n", heap[i]);
+void *my_realloc(void *ptr, size_t size) {
+   void *res;
+   size = ALIGN(size);
+   if (ptr == NULL) {
+      //if ptr is null, act like my_malloc() for size bytes
+      res = my_malloc(size);
+      return res;
    }
+   else if (size <= 0) {
+      //if size is 0 AND ptr is NOT NULL, allocate minimum sized object
+      //and free ptr
+      my_free(ptr);
+      res = my_malloc(1);
+      return res;
+   }
+   block_header *pHeader = is_valid_pointer(ptr);
+   if (pHeader == NULL) {
+      return NULL;
+   }
+   //first, we check if theres enough space for a reallocation
+   //if there is, we just change the size field
+   //if there isnt, we try to copy as much data to an new allocation,
+   //and free the given ptr
+   if (pHeader->size >= size) {
+      pHeader->size = size;
+      return ptr;
+   }
+   block_header *new_ptr = get_free_block(size);
+   if (new_ptr == NULL) {
+      errno = ENOMEM;
+      exit(1);
+   }
+   new_ptr++; //user data entry point
+   new_ptr = memcpy(new_ptr, ptr, size);
+   my_free(ptr);
+   return new_ptr;
 }
 
 

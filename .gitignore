@@ -31,3 +31,7 @@ CMakeUserPresets.json
 # Operating System files
 .DS_Store
 Thumbs.db
+
+# Local test runner
+test.c
+

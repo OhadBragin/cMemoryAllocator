@@ -8,7 +8,6 @@ A custom memory allocator in C implementing standard dynamic memory management r
 - Memory deallocation (`my_free`)
 - Contiguous array allocation (`my_calloc`)
 - Dynamic reallocation (`my_realloc`)
-- Memory block inspection utility (`print_mem_blocks`)
 
 ## Project Structure
 
